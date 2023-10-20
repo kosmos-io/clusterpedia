@@ -338,7 +338,7 @@ func (s *ClusterSynchro) refreshSyncResources() {
 				continue
 			}
 
-			resourceStorage, err := s.storage.NewResourceStorage(config.storageConfig)
+			resourceStorage, err := s.storage.NewResourceStorage(config.storageConfig, false)
 			if err != nil {
 				klog.ErrorS(err, "Failed to create resource storage", "cluster", s.name, "storage resource", storageGVR)
 				updateSyncConditions(storageGVR, clusterv1alpha2.ResourceSyncStatusPending, "SynchroCreateFailed", fmt.Sprintf("new resource storage failed: %s", err))
@@ -353,7 +353,7 @@ func (s *ClusterSynchro) refreshSyncResources() {
 
 			var metricsStore *kubestatemetrics.MetricsStore
 			if s.metricsStoreBuilder != nil {
-				metricsStore = s.metricsStoreBuilder.GetMetricStore(s.name, config.syncResource)
+				metricsStore = s.metricsStoreBuilder.GetMetricStore(s.name, config.syncResource, config.kind)
 			}
 			synchro := newResourceSynchro(
 				s.name,

@@ -64,7 +64,11 @@ func (s *CollectionResourceStorage) query(ctx context.Context, opts *internal.Li
 		result = &ResourceMetadataList{}
 	}
 
-	query := s.db.WithContext(ctx).Model(&Resource{})
+	condition := map[string]interface{}{
+		"deleted": false,
+	}
+
+	query := s.db.WithContext(ctx).Model(&Resource{}).Where(condition)
 	if s.typesQuery != nil {
 		return query.Where(s.typesQuery), result, nil
 	}

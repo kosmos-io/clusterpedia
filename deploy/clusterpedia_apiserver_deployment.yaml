@@ -11,9 +11,9 @@ metadata:
   namespace: clusterpedia-system
 spec:
   ports:
-  - port: 443
+  - port: 6443
     protocol: TCP
-    targetPort: 443
+    targetPort: 6443
   selector:
     app: clusterpedia-apiserver
 ---
@@ -25,7 +25,7 @@ metadata:
   labels:
     app: clusterpedia-apiserver
 spec:
-  replicas: 1
+  replicas: 3
   selector:
     matchLabels:
       app: clusterpedia-apiserver
@@ -39,14 +39,30 @@ spec:
         image: ghcr.io/clusterpedia-io/clusterpedia/apiserver:v0.7.0
         command:
         - /usr/local/bin/apiserver
-        - --secure-port=443
+        - --secure-port=6443
         - --storage-config=/etc/clusterpedia/storage/internalstorage-config.yaml
         - -v=3
+        - --middleware-name=rabbitmq
+        - --middleware-serverIp=rabbitmq-cluster.rabbitmq-system.svc
+        - --middleware-user=$(RABBITMQ_USER)
+        - --middleware-serverPort=5672
+        - --middleware-password=$(RABBITMQ_PASSWD)
+        - --cache-size=200
         env:
         - name: DB_PASSWORD
           valueFrom:
             secretKeyRef:
               name: internalstorage-password
+              key: password
+        - name: RABBITMQ_USER
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-connect
+              key: user
+        - name: RABBITMQ_PASSWD
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-connect
               key: password
         volumeMounts:
         - name: internalstorage-config

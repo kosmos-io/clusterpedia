@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clustersynchro-manager-kubeconfig
+  namespace: clusterpedia-system
+data:
+  manager-kubeconfig: |

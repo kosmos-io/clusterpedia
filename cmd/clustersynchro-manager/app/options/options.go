@@ -26,6 +26,8 @@ import (
 	"github.com/clusterpedia-io/clusterpedia/pkg/metrics"
 	"github.com/clusterpedia-io/clusterpedia/pkg/storage"
 	storageoptions "github.com/clusterpedia-io/clusterpedia/pkg/storage/options"
+	"github.com/clusterpedia-io/clusterpedia/pkg/watcher"
+	watchoptions "github.com/clusterpedia-io/clusterpedia/pkg/watcher/options"
 )
 
 const (
@@ -45,6 +47,7 @@ type Options struct {
 	KubeStateMetrics *kubestatemetrics.Options
 
 	WorkerNumber int // WorkerNumber is the number of worker goroutines
+	Publisher    *watchoptions.MiddlerwareOptions
 }
 
 func NewClusterSynchroManagerOptions() (*Options, error) {
@@ -77,6 +80,7 @@ func NewClusterSynchroManagerOptions() (*Options, error) {
 	options.KubeStateMetrics = kubestatemetrics.NewOptions()
 
 	options.WorkerNumber = 5
+	options.Publisher = watchoptions.NewMiddlerwareOptions()
 	return &options, nil
 }
 
@@ -96,10 +100,10 @@ func (o *Options) Flags() cliflag.NamedFlagSets {
 	fs.StringVar(&o.Kubeconfig, "kubeconfig", o.Kubeconfig, "Path to kubeconfig file with authorization and master location information.")
 
 	logsapi.AddFlags(o.Logs, fss.FlagSet("logs"))
-
 	o.Storage.AddFlags(fss.FlagSet("storage"))
 	o.Metrics.AddFlags(fss.FlagSet("metrics server"))
 	o.KubeStateMetrics.AddFlags(fss.FlagSet("kube state metrics"))
+	o.Publisher.AddFlags(fss.FlagSet("middleware"))
 	return fss
 }
 
@@ -121,6 +125,11 @@ func (o *Options) Config() (*config.Config, error) {
 	}
 
 	storagefactory, err := storage.NewStorageFactory(o.Storage.Name, o.Storage.ConfigPath)
+	if err != nil {
+		return nil, err
+	}
+
+	err = watcher.NewPulisher(o.Publisher)
 	if err != nil {
 		return nil, err
 	}

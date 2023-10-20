@@ -3,13 +3,20 @@ package internalstorage
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"gorm.io/gorm"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/watch"
 
 	internal "github.com/clusterpedia-io/api/clusterpedia"
 	"github.com/clusterpedia-io/clusterpedia/pkg/storage"
+	"github.com/clusterpedia-io/clusterpedia/pkg/utils"
+	watchcomponents "github.com/clusterpedia-io/clusterpedia/pkg/watcher/components"
+	"github.com/clusterpedia-io/clusterpedia/pkg/watcher/middleware"
 )
+
+var mutex sync.Mutex
 
 type StorageFactory struct {
 	db *gorm.DB
@@ -19,15 +26,82 @@ func (s *StorageFactory) GetSupportedRequestVerbs() []string {
 	return []string{"get", "list"}
 }
 
-func (s *StorageFactory) NewResourceStorage(config *storage.ResourceStorageConfig) (storage.ResourceStorage, error) {
-	return &ResourceStorage{
+func (s *StorageFactory) NewResourceStorage(config *storage.ResourceStorageConfig, initEventCache bool) (storage.ResourceStorage, error) {
+	gvr := schema.GroupVersionResource{
+		Group:    config.StorageGroupResource.Group,
+		Version:  config.StorageVersion.Version,
+		Resource: config.StorageGroupResource.Resource,
+	}
+
+	var cache *watchcomponents.EventCache
+	buffer := watchcomponents.GetMultiClusterEventPool().GetClusterBufferByGVR(gvr)
+	if initEventCache {
+		cachePool := watchcomponents.GetInitEventCachePool()
+		cache = cachePool.GetWatchEventCacheByGVR(gvr)
+		err := middleware.GlobalSubscriber.SubscribeTopic(gvr, config.Codec, config.NewFunc)
+		if err != nil {
+			return nil, err
+		}
+		enqueueFunc := func(event *watch.Event) {
+			if event.Type != watch.Error {
+				cache.Enqueue(event)
+			}
+			err := buffer.ProcessEvent(event.Object, event.Type)
+			if err != nil {
+				return
+			}
+		}
+		clearfunc := func() {
+			cache.Clear()
+		}
+		err = middleware.GlobalSubscriber.EventReceiving(gvr, enqueueFunc, clearfunc)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		cache = nil
+	}
+
+	mutex.Lock()
+	defer mutex.Unlock()
+	if !s.db.Migrator().HasTable(GetShardingTable(gvr)) {
+		if err := s.db.AutoMigrate(&Resource{}); err != nil {
+			return nil, err
+		}
+		err := s.db.Migrator().RenameTable("resources", GetShardingTable(gvr))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	resourceStorage := &ResourceStorage{
 		db:    s.db,
 		codec: config.Codec,
 
 		storageGroupResource: config.StorageGroupResource,
 		storageVersion:       config.StorageVersion,
 		memoryVersion:        config.MemoryVersion,
-	}, nil
+
+		buffer:     buffer,
+		eventCache: cache,
+		Namespaced: config.Namespaced,
+		eventChan:  watchcomponents.EC.StartChan(gvr),
+		newFunc:    config.NewFunc,
+		KeyFunc:    utils.GetKeyFunc(gvr, config.Namespaced),
+	}
+
+	if middleware.GlobalPublisher != nil {
+		err := middleware.GlobalPublisher.PublishTopic(gvr, config.Codec)
+		if err != nil {
+			return nil, err
+		}
+		err = middleware.GlobalPublisher.EventSending(gvr, watchcomponents.EC.StartChan, resourceStorage.PublishEvent, resourceStorage.GenCrv2Event)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return resourceStorage, nil
 }
 
 func (s *StorageFactory) NewCollectionResourceStorage(cr *internal.CollectionResource) (storage.CollectionResourceStorage, error) {

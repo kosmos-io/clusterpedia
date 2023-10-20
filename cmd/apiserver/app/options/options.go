@@ -20,6 +20,9 @@ import (
 	"github.com/clusterpedia-io/clusterpedia/pkg/apiserver"
 	"github.com/clusterpedia-io/clusterpedia/pkg/storage"
 	storageoptions "github.com/clusterpedia-io/clusterpedia/pkg/storage/options"
+	"github.com/clusterpedia-io/clusterpedia/pkg/watcher"
+	watchcomponents "github.com/clusterpedia-io/clusterpedia/pkg/watcher/components"
+	watchoptions "github.com/clusterpedia-io/clusterpedia/pkg/watcher/options"
 )
 
 type ClusterPediaServerOptions struct {
@@ -38,6 +41,8 @@ type ClusterPediaServerOptions struct {
 	//      Traces         *genericoptions.TracingOptions
 
 	Storage *storageoptions.StorageOptions
+
+	Subscriber *watchoptions.MiddlerwareOptions
 }
 
 func NewServerOptions() *ClusterPediaServerOptions {
@@ -64,7 +69,8 @@ func NewServerOptions() *ClusterPediaServerOptions {
 		Admission:      genericoptions.NewAdmissionOptions(),
 		//      Traces:         genericoptions.NewTracingOptions(),
 
-		Storage: storageoptions.NewStorageOptions(),
+		Storage:    storageoptions.NewStorageOptions(),
+		Subscriber: watchoptions.NewMiddlerwareOptions(),
 	}
 }
 
@@ -109,10 +115,19 @@ func (o *ClusterPediaServerOptions) Config() (*apiserver.Config, error) {
 		return nil, err
 	}
 
-	return &apiserver.Config{
+	config := &apiserver.Config{
 		GenericConfig:  genericConfig,
 		StorageFactory: storage,
-	}, nil
+	}
+
+	err = watcher.NewSubscriber(o.Subscriber)
+	watchcomponents.InitEventCacheSize(o.Subscriber.CacheSize)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return config, nil
 }
 
 func (o *ClusterPediaServerOptions) genericOptionsApplyTo(config *genericapiserver.RecommendedConfig) error {
@@ -153,6 +168,8 @@ func (o *ClusterPediaServerOptions) Flags() cliflag.NamedFlagSets {
 	genericfs.IntVar(&o.MaxMutatingRequestsInFlight, "max-mutating-requests-inflight", o.MaxMutatingRequestsInFlight, ""+
 		"this flag limits the maximum number of mutating requests in flight, or a zero value disables the limit completely.")
 
+	//options.BindLeaderElectionFlags(&o.LeaderElection, genericfs)
+
 	o.CoreAPI.AddFlags(fss.FlagSet("global"))
 	o.SecureServing.AddFlags(fss.FlagSet("secure serving"))
 	o.Authentication.AddFlags(fss.FlagSet("authentication"))
@@ -165,6 +182,7 @@ func (o *ClusterPediaServerOptions) Flags() cliflag.NamedFlagSets {
 	// o.Traces.AddFlags(fss.FlagSet("traces"))
 
 	o.Storage.AddFlags(fss.FlagSet("storage"))
+	o.Subscriber.AddFlags(fss.FlagSet("middleware"))
 	return fss
 }
 
