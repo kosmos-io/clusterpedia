@@ -12,7 +12,7 @@ metadata:
   labels:
     app: clusterpedia-clustersynchro-manager
 spec:
-  replicas: 1
+  replicas: 3
   selector:
     matchLabels:
       app: clusterpedia-clustersynchro-manager
@@ -28,18 +28,40 @@ spec:
         - /usr/local/bin/clustersynchro-manager
         - --storage-config=/etc/clusterpedia/storage/internalstorage-config.yaml
         - --feature-gates=PruneManagedFields=true,PruneLastAppliedConfiguration=true
+        - --kubeconfig=/etc/clusterpedia/manager-kubeconfig
+        - --middleware-name=rabbitmq
+        - --middleware-serverIp=rabbitmq-cluster.rabbitmq-system.svc
+        - --middleware-user=$(RABBITMQ_USER)
+        - --middleware-serverPort=5672
+        - --middleware-password=$(RABBITMQ_PASSWD)
         env:
         - name: DB_PASSWORD
           valueFrom:
             secretKeyRef:
               name: internalstorage-password
               key: password
+        - name: RABBITMQ_USER
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-connect
+              key: user
+        - name: RABBITMQ_PASSWD
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-connect
+              key: password
         volumeMounts:
         - name: internalstorage-config
           mountPath: /etc/clusterpedia/storage
+          readOnly: true
+        - name: manager-kubeconfig
+          mountPath: /etc/clusterpedia/
           readOnly: true
       serviceAccountName: clusterpedia-clustersynchro-manager
       volumes:
       - name: internalstorage-config
         configMap:
           name: clusterpedia-internalstorage
+      - name: manager-kubeconfig
+        configMap:
+          name: clustersynchro-manager-kubeconfig

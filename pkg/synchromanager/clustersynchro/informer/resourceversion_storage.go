@@ -11,6 +11,14 @@ type ResourceVersionStorage struct {
 	cacheStorage cache.ThreadSafeStore
 }
 
+type StorageElement struct {
+	Version   string
+	Deleted   bool
+	Published bool
+	Name      string
+	Namespace string
+}
+
 var _ cache.KeyListerGetter = &ResourceVersionStorage{}
 
 func NewResourceVersionStorage() *ResourceVersionStorage {

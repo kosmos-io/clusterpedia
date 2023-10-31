@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rabbitmq-password
+  namespace: rabbitmq-system
+data:
+  password: cyZQQDg3OTk4
+---
+apiVersion: rabbitmq.com/v1beta1
+kind: RabbitmqCluster
+metadata:
+  namespace: rabbitmq-system
+  name: rabbitmq-cluster
+  labels:
+    app: rabbitmq-cluster
+spec:
+  replicas: 3
+  image: rabbitmq:3.11.10-management
+  override:
+    statefulSet:
+      spec:
+        template:
+          spec:
+            containers:
+              - name: rabbitmq
+                env:
+                  - name: SEED_USER_PASSWORD
+                    valueFrom:
+                      secretKeyRef:
+                        name: rabbitmq-password
+                        key: password
+
+  resources:
+    limits:
+      cpu: 2
+      memory: 4Gi
+    requests:
+      cpu: 2
+      memory: 4Gi
+  rabbitmq:
+    additionalConfig: |
+      default_user=admin
+      default_pass=$(SEED_USER_PASSWORD)
+  persistence:  # 特意把这个参考写出来，需要根据实际情况去修改，更多参数修改，请参照官方文档。
+    storageClassName: openebs-hostpath
+    storage: 1Gi

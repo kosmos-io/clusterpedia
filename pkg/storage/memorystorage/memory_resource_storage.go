@@ -18,6 +18,7 @@ import (
 	"github.com/clusterpedia-io/clusterpedia/pkg/storage"
 	cache "github.com/clusterpedia-io/clusterpedia/pkg/storage/memorystorage/watchcache"
 	utilwatch "github.com/clusterpedia-io/clusterpedia/pkg/utils/watch"
+	watchcomponents "github.com/clusterpedia-io/clusterpedia/pkg/watcher/components"
 )
 
 var (
@@ -54,7 +55,7 @@ func (s *ResourceStorage) GetStorageConfig() *storage.ResourceStorageConfig {
 	return s.storageConfig
 }
 
-func (s *ResourceStorage) Create(ctx context.Context, cluster string, obj runtime.Object) error {
+func (s *ResourceStorage) Create(ctx context.Context, cluster string, obj runtime.Object, _ bool) error {
 	resourceVersion, err := s.CrvSynchro.UpdateClusterResourceVersion(obj, cluster)
 	if err != nil {
 		return err
@@ -68,7 +69,7 @@ func (s *ResourceStorage) Create(ctx context.Context, cluster string, obj runtim
 	return nil
 }
 
-func (s *ResourceStorage) Update(ctx context.Context, cluster string, obj runtime.Object) error {
+func (s *ResourceStorage) Update(ctx context.Context, cluster string, obj runtime.Object, _ bool) error {
 	resourceVersion, err := s.CrvSynchro.UpdateClusterResourceVersion(obj, cluster)
 	if err != nil {
 		return err
@@ -82,7 +83,7 @@ func (s *ResourceStorage) Update(ctx context.Context, cluster string, obj runtim
 	return nil
 }
 
-func (s *ResourceStorage) Delete(ctx context.Context, cluster string, obj runtime.Object) error {
+func (s *ResourceStorage) Delete(ctx context.Context, cluster string, obj runtime.Object, _ bool) error {
 	resourceVersion, err := s.CrvSynchro.UpdateClusterResourceVersion(obj, cluster)
 	if err != nil {
 		return err
@@ -118,6 +119,10 @@ func (s *ResourceStorage) Get(ctx context.Context, cluster, namespace, name stri
 		return fmt.Errorf("Failed to decode resource, into is %T", into)
 	}
 	return nil
+}
+
+func (s *ResourceStorage) GetObj(ctx context.Context, cluster, namespace, name string) (runtime.Object, error) {
+	return nil, nil
 }
 
 // nolint
@@ -194,7 +199,15 @@ func (s *ResourceStorage) List(ctx context.Context, listObject runtime.Object, o
 	return nil
 }
 
-func (s *ResourceStorage) Watch(ctx context.Context, options *internal.ListOptions) (watch.Interface, error) {
+func (s *ResourceStorage) GetEventBuffer() *watchcomponents.MultiClusterBuffer {
+	return nil
+}
+
+func (s *ResourceStorage) ProcessEvent(ctx context.Context, eventType watch.EventType, obj runtime.Object, cluster string) error {
+	return nil
+}
+
+func (s *ResourceStorage) Watch(ctx context.Context, _ func() runtime.Object, options *internal.ListOptions, _ schema.GroupVersionKind) (watch.Interface, error) {
 	resourceversion := options.ResourceVersion
 	watchRV, err := cache.NewClusterResourceVersionFromString(resourceversion)
 	if err != nil {

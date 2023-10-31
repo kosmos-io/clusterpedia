@@ -215,7 +215,7 @@ func TestResourceStorage_genGetObjectQuery(t *testing.T) {
 		t.Run(fmt.Sprintf("%s postgres", test.name), func(t *testing.T) {
 			postgreSQL := postgresDB.ToSQL(func(tx *gorm.DB) *gorm.DB {
 				rs := newTestResourceStorage(tx, test.resource)
-				return rs.genGetObjectQuery(context.TODO(), test.cluster, test.namespace, test.resourceName).First(interface{}(nil))
+				return rs.GenGetObjectQuery(context.TODO(), test.cluster, test.namespace, test.resourceName).First(interface{}(nil))
 			})
 
 			if postgreSQL != test.expected.postgres {
@@ -227,7 +227,7 @@ func TestResourceStorage_genGetObjectQuery(t *testing.T) {
 			t.Run(fmt.Sprintf("%s mysql-%s", test.name, version), func(t *testing.T) {
 				mysqlSQL := mysqlDBs[version].ToSQL(func(tx *gorm.DB) *gorm.DB {
 					rs := newTestResourceStorage(tx, test.resource)
-					return rs.genGetObjectQuery(context.TODO(), test.cluster, test.namespace, test.resourceName).First(interface{}(nil))
+					return rs.GenGetObjectQuery(context.TODO(), test.cluster, test.namespace, test.resourceName).First(interface{}(nil))
 				})
 
 				if mysqlSQL != test.expected.mysql {
@@ -261,7 +261,7 @@ func TestResourceStorage_genListObjectQuery(t *testing.T) {
 			postgreSQL, err := toSQL(postgresDB.Session(&gorm.Session{DryRun: true}), test.listOptions,
 				func(db *gorm.DB, options *internal.ListOptions) (*gorm.DB, error) {
 					rs := newTestResourceStorage(db, test.resource)
-					_, _, query, _, err := rs.genListObjectsQuery(context.TODO(), options)
+					_, _, query, _, err := rs.genListObjectsQuery(context.TODO(), options, true)
 					return query, err
 				},
 			)
@@ -277,7 +277,7 @@ func TestResourceStorage_genListObjectQuery(t *testing.T) {
 				mysqlSQL, err := toSQL(mysqlDBs[version].Session(&gorm.Session{DryRun: true}), test.listOptions,
 					func(db *gorm.DB, options *internal.ListOptions) (*gorm.DB, error) {
 						rs := newTestResourceStorage(db, test.resource)
-						_, _, query, _, err := rs.genListObjectsQuery(context.TODO(), options)
+						_, _, query, _, err := rs.genListObjectsQuery(context.TODO(), options, true)
 						return query, err
 					},
 				)
@@ -332,7 +332,7 @@ func TestResourceStorage_deleteObject(t *testing.T) {
 			postgreSQL := postgresDB.Session(&gorm.Session{SkipDefaultTransaction: true}).ToSQL(
 				func(tx *gorm.DB) *gorm.DB {
 					rs := newTestResourceStorage(tx, test.resource)
-					return rs.deleteObject(test.cluster, test.namespace, test.resourceName)
+					return rs.DeleteObject(test.cluster, test.namespace, test.resourceName)
 				})
 
 			if postgreSQL != test.expected.postgres {
@@ -347,7 +347,7 @@ func TestResourceStorage_deleteObject(t *testing.T) {
 				mysqlSQL := mysqlDBs[version].Session(&gorm.Session{SkipDefaultTransaction: true}).ToSQL(
 					func(tx *gorm.DB) *gorm.DB {
 						rs := newTestResourceStorage(tx, test.resource)
-						return rs.deleteObject(test.cluster, test.namespace, test.resourceName)
+						return rs.DeleteObject(test.cluster, test.namespace, test.resourceName)
 					})
 
 				if mysqlSQL != test.expected.mysql {
