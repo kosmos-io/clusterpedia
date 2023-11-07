@@ -2,6 +2,7 @@ package options
 
 import (
 	"fmt"
+	watchcomponents "github.com/clusterpedia-io/clusterpedia/pkg/watcher/components"
 	"net"
 	"net/http"
 	"strings"
@@ -116,6 +117,8 @@ func (o *ClusterPediaServerOptions) Config() (*apiserver.Config, error) {
 	if err := o.genericOptionsApplyTo(genericConfig); err != nil {
 		return nil, err
 	}
+
+	watchcomponents.InitEventCacheSize(100)
 
 	return &apiserver.Config{
 		GenericConfig:  genericConfig,

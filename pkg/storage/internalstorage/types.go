@@ -61,6 +61,7 @@ type Resource struct {
 	OwnerUID        types.UID `gorm:"column:owner_uid;size:36;not null;default:''"`
 	UID             types.UID `gorm:"size:36;not null"`
 	ResourceVersion string    `gorm:"size:30;not null"`
+	ClusterResourceVersion int64
 
 	Object datatypes.JSON `gorm:"not null"`
 
@@ -101,7 +102,7 @@ func (res Resource) ConvertTo(codec runtime.Codec, object runtime.Object) (runti
 
 type ResourceMetadata struct {
 	ResourceType `gorm:"embedded"`
-
+	ClusterResourceVersion int64
 	Metadata datatypes.JSON
 }
 

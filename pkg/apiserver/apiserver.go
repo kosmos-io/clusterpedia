@@ -3,6 +3,7 @@ package apiserver
 import (
 	"context"
 	"fmt"
+	watchcomponents "github.com/clusterpedia-io/clusterpedia/pkg/watcher/components"
 	"net/http"
 
 	metainternal "k8s.io/apimachinery/pkg/apis/meta/internalversion"
@@ -106,6 +107,10 @@ func (config completedConfig) New() (*ClusterPediaServer, error) {
 		return nil, fmt.Errorf("CompletedConfig.New() called with config.StorageFactory == nil")
 	}
 
+	// init event cache pool
+	eventStop := make(chan struct{})
+	watchcomponents.InitEventCachePool(eventStop)
+
 	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config.ClientConfig)
 	if err != nil {
 		return nil, err
@@ -158,6 +163,11 @@ func (config completedConfig) New() (*ClusterPediaServer, error) {
 	}
 
 	genericServer.AddPostStartHookOrDie("start-clusterpedia-informers", func(context genericapiserver.PostStartHookContext) error {
+		// inform to close event watch
+		go func() {
+			<-context.StopCh
+			close(eventStop)
+		}()
 		clusterpediaInformerFactory.Start(context.StopCh)
 		clusterpediaInformerFactory.WaitForCacheSync(context.StopCh)
 
