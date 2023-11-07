@@ -50,12 +50,12 @@ func (rt ResourceType) GroupVersionResource() schema.GroupVersionResource {
 type Resource struct {
 	ID uint `gorm:"primaryKey"`
 
-	Group    string `gorm:"size:63;not null;uniqueIndex:uni_group_version_resource_cluster_namespace_name;index:idx_group_version_resource_namespace_name;index:idx_group_version_resource_name"`
-	Version  string `gorm:"size:15;not null;uniqueIndex:uni_group_version_resource_cluster_namespace_name;index:idx_group_version_resource_namespace_name;index:idx_group_version_resource_name"`
-	Resource string `gorm:"size:63;not null;uniqueIndex:uni_group_version_resource_cluster_namespace_name;index:idx_group_version_resource_namespace_name;index:idx_group_version_resource_name"`
+	Group    string `gorm:"size:63;not null"`
+	Version  string `gorm:"size:15;not null"`
+	Resource string `gorm:"size:63;not null"`
 	Kind     string `gorm:"size:63;not null"`
 
-	Cluster                string    `gorm:"size:253;not null;uniqueIndex:uni_group_version_resource_cluster_namespace_name,length:100;index:idx_cluster"`
+	Cluster                string    `gorm:"size:253;not null;uniqueIndex:uni_group_version_resource_cluster_namespace_name,length:100"`
 	Namespace              string    `gorm:"size:253;not null;uniqueIndex:uni_group_version_resource_cluster_namespace_name,length:50;index:idx_group_version_resource_namespace_name"`
 	Name                   string    `gorm:"size:253;not null;uniqueIndex:uni_group_version_resource_cluster_namespace_name,length:100;index:idx_group_version_resource_namespace_name;index:idx_group_version_resource_name"`
 	OwnerUID               types.UID `gorm:"column:owner_uid;size:36;not null;default:''"`

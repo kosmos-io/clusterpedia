@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	internal "github.com/clusterpedia-io/api/clusterpedia"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -24,6 +25,10 @@ func ParseStr2Int64(crvStr string) (int64, error) {
 
 func IsEqual(crvStr1 string, crvStr2 string) bool {
 	return crvStr1 == crvStr2
+}
+
+func IsBigger(crv1 int64, crv2 int64) bool {
+	return crv1 > crv2
 }
 
 type keyFunc func(runtime.Object) (string, error)
@@ -58,4 +63,48 @@ func GetKeyFunc(gvr schema.GroupVersionResource, isNamespaced bool) keyFunc {
 	}
 
 	return kc
+}
+
+func IsListOptsEmpty(opts *internal.ListOptions) bool {
+	if opts == nil {
+		return true
+	}
+
+	if opts.Names != nil {
+		return false
+	}
+
+	if opts.Namespaces != nil {
+		return false
+	}
+
+	if opts.ClusterNames != nil {
+		return false
+	}
+
+	if opts.OwnerName != "" {
+		return false
+	}
+
+	if opts.OwnerUID != "" {
+		return false
+	}
+
+	if opts.Since != nil {
+		return false
+	}
+
+	if opts.Before != nil {
+		return false
+	}
+
+	if opts.EnhancedFieldSelector != nil {
+		return false
+	}
+
+	if opts.ExtraLabelSelector != nil {
+		return false
+	}
+
+	return true
 }

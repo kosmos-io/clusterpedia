@@ -3,6 +3,8 @@ package internalstorage
 import (
 	"context"
 	"fmt"
+	"github.com/clusterpedia-io/clusterpedia/pkg/synchromanager/clustersynchro/informer"
+	"sync"
 
 	"github.com/clusterpedia-io/clusterpedia/pkg/watcher/middleware"
 	"k8s.io/apimachinery/pkg/watch"
@@ -15,6 +17,8 @@ import (
 	"github.com/clusterpedia-io/clusterpedia/pkg/utils"
 	watchcomponents "github.com/clusterpedia-io/clusterpedia/pkg/watcher/components"
 )
+
+var mutex sync.Mutex
 
 type StorageFactory struct {
 	db *gorm.DB
@@ -42,6 +46,18 @@ func (s *StorageFactory) NewResourceStorage(config *storage.ResourceStorageConfi
 		Namespaced: config.Namespaced,
 		newFunc:    config.NewFunc,
 		KeyFunc:    utils.GetKeyFunc(gvr, config.Namespaced),
+	}
+
+	mutex.Lock()
+	defer mutex.Unlock()
+	if !s.db.Migrator().HasTable(GetTable(gvr)) {
+		if err := s.db.AutoMigrate(&Resource{}); err != nil {
+			return nil, err
+		}
+		err := s.db.Migrator().RenameTable("resources", GetTable(gvr))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// initEventCache is true when Apiserver starts, false when clustersynchro-manager starts
@@ -100,11 +116,26 @@ func (s *StorageFactory) NewCollectionResourceStorage(cr *internal.CollectionRes
 
 func (f *StorageFactory) GetResourceVersions(ctx context.Context, cluster string) (map[schema.GroupVersionResource]map[string]interface{}, error) {
 	var resources []Resource
-	result := f.db.WithContext(ctx).Select("group", "version", "resource", "namespace", "name", "resource_version").
-		Where(map[string]interface{}{"cluster": cluster}).
-		Find(&resources)
-	if result.Error != nil {
-		return nil, InterpretDBError(cluster, result.Error)
+	mutex.Lock()
+	tables, err := f.db.Migrator().GetTables()
+	if err != nil {
+		mutex.Unlock()
+		return nil, err
+	}
+	mutex.Unlock()
+	for _, table := range tables {
+		var tableResources []Resource
+		result := f.db.WithContext(ctx).Table(table).Select("group", "version", "resource",
+			"namespace", "name", "resource_version", "deleted", "published").
+			Where(map[string]interface{}{"cluster": cluster, "deleted": false}).
+			//In case deleted event be losted when synchro manager do a leaderelection or reboot
+			Or(map[string]interface{}{"cluster": cluster, "deleted": true, "published": false}).
+			Find(&tableResources)
+		if result.Error != nil {
+			return nil, InterpretDBError(cluster, result.Error)
+		}
+
+		resources = append(resources, tableResources...)
 	}
 
 	resourceversions := make(map[schema.GroupVersionResource]map[string]interface{})
@@ -120,22 +151,37 @@ func (f *StorageFactory) GetResourceVersions(ctx context.Context, cluster string
 		if resource.Namespace != "" {
 			key = resource.Namespace + "/" + resource.Name
 		}
-		versions[key] = resource.ResourceVersion
+		versions[key] = informer.StorageElement{
+			Version:   resource.ResourceVersion,
+			Deleted:   resource.Deleted,
+			Published: resource.Published,
+			Name:      resource.Name,
+			Namespace: resource.Namespace,
+		}
 	}
 	return resourceversions, nil
 }
 
 func (f *StorageFactory) CleanCluster(ctx context.Context, cluster string) error {
-	result := f.db.WithContext(ctx).Where(map[string]interface{}{"cluster": cluster}).Delete(&Resource{})
-	return InterpretDBError(cluster, result.Error)
+	mutex.Lock()
+	tables, err := f.db.Migrator().GetTables()
+	if err != nil {
+		mutex.Unlock()
+		return err
+	}
+	mutex.Unlock()
+	for _, table := range tables {
+		result := f.db.WithContext(ctx).Table(table).Where(map[string]interface{}{"cluster": cluster}).Delete(&Resource{})
+		if result.Error != nil {
+			return InterpretDBError(cluster, result.Error)
+		}
+	}
+	return nil
 }
 
 func (s *StorageFactory) CleanClusterResource(ctx context.Context, cluster string, gvr schema.GroupVersionResource) error {
-	result := s.db.Where(map[string]interface{}{
-		"cluster":  cluster,
-		"group":    gvr.Group,
-		"version":  gvr.Version,
-		"resource": gvr.Resource,
+	result := s.db.Table(GetTable(gvr)).Where(map[string]interface{}{
+		"cluster": cluster,
 	}).Delete(&Resource{})
 	return InterpretDBError(fmt.Sprintf("%s/%s", cluster, gvr), result.Error)
 }

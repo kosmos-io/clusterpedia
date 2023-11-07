@@ -365,7 +365,7 @@ func (synchro *ResourceSynchro) handleResourceEvent(event *queue.Event) {
 			}
 			metaObj, err := meta.Accessor(obj)
 			if err == nil {
-				klog.Warning("DeletedFinalStateUnknown, name: ", metaObj.GetName(), ", time: ", metaObj.GetDeletionTimestamp(),
+				klog.V(7).Info("DeletedFinalStateUnknown, name: ", metaObj.GetName(), ", time: ", metaObj.GetDeletionTimestamp(),
 					", kind: ", obj.GetObjectKind().GroupVersionKind().Kind, ", cluster: ", synchro.cluster)
 			}
 		}

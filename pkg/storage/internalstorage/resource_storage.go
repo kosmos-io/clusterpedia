@@ -80,6 +80,21 @@ func (s *ResourceStorage) Create(ctx context.Context, cluster string, obj runtim
 		return err
 	}
 
+	//deleted object could be created again
+	condition := map[string]interface{}{
+		"namespace": metaobj.GetNamespace(),
+		"name":      metaobj.GetName(),
+		"deleted":   true,
+	}
+	if cluster != "" {
+		condition["cluster"] = cluster
+	}
+	dbResult := s.db.Model(&Resource{}).Table(GetTable(newGvr(s))).Where(condition).Delete(&Resource{})
+	if dbResult.Error != nil {
+		err = InterpretResourceDBError(cluster, metaobj.GetName(), dbResult.Error)
+		return fmt.Errorf("[Create]:  Object %s/%s has been created failed in step one, err: %v", metaobj.GetName(), metaobj.GetNamespace(), err)
+	}
+
 	resource := Resource{
 		Cluster:                cluster,
 		OwnerUID:               ownerUID,
@@ -99,7 +114,7 @@ func (s *ResourceStorage) Create(ctx context.Context, cluster string, obj runtim
 		resource.DeletedAt = sql.NullTime{Time: deletedAt.Time, Valid: true}
 	}
 
-	result := s.db.WithContext(ctx).Create(&resource)
+	result := s.db.WithContext(ctx).Table(GetTable(newGvr(s))).Create(&resource)
 	return InterpretResourceDBError(cluster, metaobj.GetName(), result.Error)
 }
 
@@ -144,11 +159,8 @@ func (s *ResourceStorage) Update(ctx context.Context, cluster string, obj runtim
 		updatedResource["deleted_at"] = sql.NullTime{Time: deletedAt.Time, Valid: true}
 	}
 
-	result := s.db.WithContext(ctx).Model(&Resource{}).Where(map[string]interface{}{
+	result := s.db.WithContext(ctx).Table(GetTable(newGvr(s))).Model(&Resource{}).Where(map[string]interface{}{
 		"cluster":   cluster,
-		"group":     s.storageGroupResource.Group,
-		"version":   s.storageVersion.Version,
-		"resource":  s.storageGroupResource.Resource,
 		"namespace": metaobj.GetNamespace(),
 		"name":      metaobj.GetName(),
 	}).Updates(updatedResource)
@@ -156,11 +168,8 @@ func (s *ResourceStorage) Update(ctx context.Context, cluster string, obj runtim
 }
 
 func (s *ResourceStorage) deleteObject(cluster, namespace, name string) *gorm.DB {
-	return s.db.Model(&Resource{}).Where(map[string]interface{}{
+	return s.db.Table(GetTable(newGvr(s))).Model(&Resource{}).Where(map[string]interface{}{
 		"cluster":   cluster,
-		"group":     s.storageGroupResource.Group,
-		"version":   s.storageVersion.Version,
-		"resource":  s.storageGroupResource.Resource,
 		"namespace": namespace,
 		"name":      name,
 	}).Delete(&Resource{})
@@ -194,42 +203,41 @@ func (s *ResourceStorage) Delete(ctx context.Context, cluster string, obj runtim
 	condition := map[string]interface{}{
 		"cluster":   cluster,
 		"namespace": metaobj.GetNamespace(),
-		"group":     s.storageGroupResource.Group,
-		"version":   s.storageVersion.Version,
-		"resource":  s.storageGroupResource.Resource,
 	}
 	if metaobj.GetName() != "" {
 		condition["name"] = metaobj.GetName()
 	}
 
-	result := s.db.WithContext(ctx).Model(&Resource{}).Where(condition).Updates(updatedResource)
+	result := s.db.WithContext(ctx).Table(GetTable(newGvr(s))).Model(&Resource{}).Where(condition).Updates(updatedResource)
 	return InterpretResourceDBError(cluster, metaobj.GetName(), result.Error)
 }
 
 func (s *ResourceStorage) genGetObjectQuery(ctx context.Context, cluster, namespace, name string) *gorm.DB {
-	return s.db.WithContext(ctx).Model(&Resource{}).Select("object").Where(map[string]interface{}{
+	return s.db.WithContext(ctx).Table(GetTable(newGvr(s))).Model(&Resource{}).Select("object").Where(map[string]interface{}{
 		"cluster":   cluster,
-		"group":     s.storageGroupResource.Group,
-		"version":   s.storageVersion.Version,
-		"resource":  s.storageGroupResource.Resource,
 		"namespace": namespace,
 		"name":      name,
 	})
 }
 
 func (s *ResourceStorage) Get(ctx context.Context, cluster, namespace, name string, into runtime.Object) error {
-	var objects [][]byte
-	if result := s.genGetObjectQuery(ctx, cluster, namespace, name).First(&objects); result.Error != nil {
+	var resource Resource
+	if result := s.genGetObjectQuery(ctx, cluster, namespace, name).First(&resource); result.Error != nil {
 		return InterpretResourceDBError(cluster, namespace+"/"+name, result.Error)
 	}
 
-	obj, _, err := s.codec.Decode(objects[0], nil, into)
+	obj, _, err := s.codec.Decode(resource.Object, nil, into)
 	if err != nil {
 		return err
 	}
 	if obj != into {
 		return fmt.Errorf("Failed to decode resource, into is %T", into)
 	}
+	metaObj, err := meta.Accessor(obj)
+	if err != nil {
+		return err
+	}
+	metaObj.SetResourceVersion(utils.ParseInt642Str(resource.ClusterResourceVersion))
 	return nil
 }
 
@@ -239,12 +247,9 @@ func (s *ResourceStorage) GetObj(ctx context.Context, cluster, namespace, name s
 		"namespace": namespace,
 		"name":      name,
 		"cluster":   cluster,
-		"group":     s.storageGroupResource.Group,
-		"version":   s.storageVersion.Version,
-		"resource":  s.storageGroupResource.Resource,
 	}
 
-	result := s.db.WithContext(ctx).Model(&Resource{}).
+	result := s.db.WithContext(ctx).Table(GetTable(newGvr(s))).Model(&Resource{}).
 		Select("cluster_resource_version, object").Where(condition).First(&resource)
 	if result.Error != nil {
 		return nil, InterpretResourceDBError(cluster, namespace+"/"+name, result.Error)
@@ -262,18 +267,19 @@ func (s *ResourceStorage) GetObj(ctx context.Context, cluster, namespace, name s
 	return obj, nil
 }
 
-func (s *ResourceStorage) genListObjectsQuery(ctx context.Context, opts *internal.ListOptions) (int64, *int64, *gorm.DB, ObjectList, error) {
+func (s *ResourceStorage) genListObjectsQuery(ctx context.Context, opts *internal.ListOptions, isAll bool) (int64, *int64, *gorm.DB, ObjectList, error) {
 	var result ObjectList = &BytesList{}
 	if opts.OnlyMetadata {
 		result = &ResourceMetadataList{}
 	}
 
-	query := s.db.WithContext(ctx).Model(&Resource{})
-	query = query.Where(map[string]interface{}{
-		"group":    s.storageGroupResource.Group,
-		"version":  s.storageVersion.Version,
-		"resource": s.storageGroupResource.Resource,
-	})
+	var condition map[string]interface{}
+	if !isAll {
+		condition = map[string]interface{}{
+			"deleted": false,
+		}
+	}
+	query := s.db.WithContext(ctx).Table(GetTable(newGvr(s))).Model(result).Where(condition)
 	offset, amount, query, err := applyListOptionsToResourceQuery(s.db, query, opts)
 	return offset, amount, query, result, err
 }
@@ -282,11 +288,9 @@ func (s *ResourceStorage) genListQuery(ctx context.Context, newfunc func() runti
 	var result [][]byte
 
 	condition := map[string]interface{}{
-		"group":    s.storageGroupResource.Group,
-		"version":  s.storageVersion.Version,
-		"resource": s.storageGroupResource.Resource,
+		"deleted": false,
 	}
-	query := s.db.WithContext(ctx).Model(&Resource{}).Select("object").Where(condition)
+	query := s.db.WithContext(ctx).Table(GetTable(newGvr(s))).Model(&Resource{}).Select("object").Where(condition)
 	_, _, query, err := applyListOptionsToResourceQuery(s.db, query, opts)
 	if err != nil {
 		return nil, err
@@ -315,7 +319,7 @@ func (s *ResourceStorage) genListQuery(ctx context.Context, newfunc func() runti
 }
 
 func (s *ResourceStorage) List(ctx context.Context, listObject runtime.Object, opts *internal.ListOptions) error {
-	offset, amount, query, result, err := s.genListObjectsQuery(ctx, opts)
+	offset, amount, query, result, err := s.genListObjectsQuery(ctx, opts, true)
 	if err != nil {
 		return err
 	}
@@ -329,6 +333,18 @@ func (s *ResourceStorage) List(ctx context.Context, listObject runtime.Object, o
 	if err != nil {
 		return err
 	}
+
+	objects, crvs, maxCrv, err := getObjectListAndMaxCrv(objects, opts.OnlyMetadata)
+	if err != nil {
+		return err
+	}
+	if !utils.IsListOptsEmpty(opts) {
+		maxCrv, err = s.GetMaxCrv(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	list.SetResourceVersion(maxCrv)
 
 	if opts.WithContinue != nil && *opts.WithContinue {
 		if int64(len(objects)) == opts.Limit {
@@ -347,13 +363,20 @@ func (s *ResourceStorage) List(ctx context.Context, listObject runtime.Object, o
 		return nil
 	}
 
+	accessor := meta.NewAccessor()
+
 	if unstructuredList, ok := listObject.(*unstructured.UnstructuredList); ok {
 		unstructuredList.Items = make([]unstructured.Unstructured, 0, len(objects))
-		for _, object := range objects {
+		for i, object := range objects {
 			uObj := &unstructured.Unstructured{}
 			obj, err := object.ConvertTo(s.codec, uObj)
 			if err != nil {
 				return err
+			}
+
+			err = accessor.SetResourceVersion(obj, crvs[i])
+			if err != nil {
+				return fmt.Errorf("set resourceVersion failed: %v, unstructuredList", err)
 			}
 
 			uObj, ok := obj.(*unstructured.Unstructured)
@@ -385,12 +408,32 @@ func (s *ResourceStorage) List(ctx context.Context, listObject runtime.Object, o
 		return fmt.Errorf("need ptr to slice: %v", err)
 	}
 
-	slice := reflect.MakeSlice(v.Type(), len(objects), len(objects))
+	dedup := make(map[string]bool)
 	expected := reflect.New(v.Type().Elem()).Interface().(runtime.Object)
-	for i, object := range objects {
+	var dedupObjects []runtime.Object
+	for _, object := range objects {
 		obj, err := object.ConvertTo(s.codec, expected.DeepCopyObject())
 		if err != nil {
 			return err
+		}
+
+		resourceKey, err := s.KeyFunc(obj)
+		if err != nil {
+			return fmt.Errorf("keyfunc failed: %v, structedList", err)
+		} else {
+			if dedup[resourceKey] {
+				continue
+			}
+			dedup[resourceKey] = true
+			dedupObjects = append(dedupObjects, obj)
+		}
+	}
+
+	slice := reflect.MakeSlice(v.Type(), len(objects), len(objects))
+	for i, obj := range dedupObjects {
+		err = accessor.SetResourceVersion(obj, crvs[i])
+		if err != nil {
+			return fmt.Errorf("set resourceVersion failed: %v, structedList", err)
 		}
 		slice.Index(i).Set(reflect.ValueOf(obj).Elem())
 	}
@@ -467,12 +510,7 @@ func (s *ResourceStorage) fetchInitEvents(ctx context.Context, rv string, newfun
 func (s *ResourceStorage) GetMaxCrv(ctx context.Context) (string, error) {
 	maxCrv := "0"
 	var metadataList ResourceMetadataList
-	condition := map[string]interface{}{
-		"group":    s.storageGroupResource.Group,
-		"version":  s.storageVersion.Version,
-		"resource": s.storageGroupResource.Resource,
-	}
-	result := s.db.WithContext(ctx).Model(&Resource{}).Select("cluster_resource_version").Where(condition).Order("cluster_resource_version DESC").Limit(1).Find(&metadataList)
+	result := s.db.WithContext(ctx).Table(GetTable(newGvr(s))).Model(&Resource{}).Select("cluster_resource_version").Order("cluster_resource_version DESC").Limit(1).Find(&metadataList)
 	if result.Error != nil {
 		return maxCrv, InterpretResourceDBError("", s.storageGroupResource.Resource, result.Error)
 	}
@@ -480,6 +518,14 @@ func (s *ResourceStorage) GetMaxCrv(ctx context.Context) (string, error) {
 		maxCrv = utils.ParseInt642Str(metadata.ClusterResourceVersion)
 	}
 	return maxCrv, nil
+}
+
+func newGvr(s *ResourceStorage) schema.GroupVersionResource {
+	return schema.GroupVersionResource{
+		Group:    s.storageGroupResource.Group,
+		Version:  s.storageVersion.Version,
+		Resource: s.storageGroupResource.Resource,
+	}
 }
 
 // PublishEvent update column `ClusterResourceVersion` and `published` when event send to messagequeue middleware success.
@@ -502,15 +548,12 @@ func (s *ResourceStorage) PublishEvent(ctx context.Context, wc *watchcomponents.
 	}
 
 	condition := map[string]interface{}{
-		"group":     s.storageGroupResource.Group,
-		"version":   s.storageVersion.Version,
-		"resource":  s.storageGroupResource.Resource,
 		"cluster":   wc.Cluster,
 		"namespace": metaObj.GetNamespace(),
 		"name":      metaObj.GetName(),
 	}
 
-	s.db.WithContext(ctx).Model(&Resource{}).Where(condition).Updates(updatedResource)
+	s.db.WithContext(ctx).Table(GetTable(newGvr(s))).Model(&Resource{}).Where(condition).Updates(updatedResource)
 }
 
 func (s *ResourceStorage) GenCrv2Event(event *watch.Event) {
@@ -561,6 +604,49 @@ func applyOwnerToResourceQuery(db *gorm.DB, query *gorm.DB, opts *internal.ListO
 		query = query.Where("owner_uid IN (?)", ownerQuery)
 	}
 	return query, nil
+}
+
+func getObjectListAndMaxCrv(objList []Object, onlyMetada bool) ([]Object, []string, string, error) {
+	crvs := make([]string, 0, len(objList))
+	var maxCrv int64 = 0
+
+	var objListNeed []Object
+	if onlyMetada {
+		for _, object := range objList {
+			if metadata, ok := object.(ResourceMetadata); ok {
+				if utils.IsBigger(metadata.ClusterResourceVersion, maxCrv) {
+					maxCrv = metadata.ClusterResourceVersion
+				}
+
+				if metadata.Deleted {
+					continue
+				}
+				objListNeed = append(objListNeed, object)
+				crvs = append(crvs, utils.ParseInt642Str(metadata.ClusterResourceVersion))
+			} else {
+				return nil, nil, "0", fmt.Errorf("unknown object type")
+			}
+		}
+		return objList, crvs, utils.ParseInt642Str(maxCrv), nil
+	} else {
+		for _, object := range objList {
+			if resource, ok := object.(Resource); ok {
+				if utils.IsBigger(resource.ClusterResourceVersion, maxCrv) {
+					maxCrv = resource.ClusterResourceVersion
+				}
+				if resource.Deleted {
+					continue
+				}
+				var bytes Bytes
+				bytes = []byte(resource.Object)
+				crvs = append(crvs, utils.ParseInt642Str(resource.ClusterResourceVersion))
+				objListNeed = append(objListNeed, bytes)
+			} else {
+				return nil, nil, "0", fmt.Errorf("unknown object type")
+			}
+		}
+		return objListNeed, crvs, utils.ParseInt642Str(maxCrv), nil
+	}
 }
 
 type errWatcher struct {
