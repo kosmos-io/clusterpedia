@@ -79,7 +79,7 @@ func (informer *resourceVersionInformer) HandleDeltas(deltas cache.Deltas, isInI
 				}
 
 				informer.handler.OnAdd(d.Object, isInInitialList)
-				break
+				continue
 			}
 
 			if d.Type == cache.Replaced {
@@ -87,7 +87,7 @@ func (informer *resourceVersionInformer) HandleDeltas(deltas cache.Deltas, isInI
 					if v == 0 {
 						informer.handler.OnSync(d.Object)
 					}
-					break
+					continue
 				}
 			}
 
@@ -107,7 +107,11 @@ func (informer *resourceVersionInformer) HandleDeltas(deltas cache.Deltas, isInI
 
 var versioner storage.Versioner = storage.APIObjectVersioner{}
 
-func compareResourceVersion(obj interface{}, rv string) int {
+func compareResourceVersion(obj interface{}, rv *StorageElement) int {
+	if rv == nil || !rv.Published {
+		return 1
+	}
+
 	object, ok := obj.(runtime.Object)
 	if !ok {
 		// TODO(clusterpedia-io): add log
@@ -119,7 +123,7 @@ func compareResourceVersion(obj interface{}, rv string) int {
 		return -1
 	}
 
-	version, err := versioner.ParseResourceVersion(rv)
+	version, err := versioner.ParseResourceVersion(rv.Version)
 	if err != nil {
 		return -1
 	}

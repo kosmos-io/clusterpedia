@@ -5,9 +5,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"k8s.io/klog/v2"
 	"reflect"
 	"strconv"
 	"sync"
+	"time"
 
 	"gorm.io/gorm"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -40,6 +42,12 @@ type ResourceStorage struct {
 
 	eventCache *watchcomponents.EventCache
 	Namespaced bool
+
+	eventChan chan *watchcomponents.EventWithCluster
+
+	newFunc func() runtime.Object
+
+	KeyFunc func(runtime.Object) (string, error)
 }
 
 func (s *ResourceStorage) GetStorageConfig() *storage.ResourceStorageConfig {
@@ -51,7 +59,7 @@ func (s *ResourceStorage) GetStorageConfig() *storage.ResourceStorageConfig {
 	}
 }
 
-func (s *ResourceStorage) Create(ctx context.Context, cluster string, obj runtime.Object) error {
+func (s *ResourceStorage) Create(ctx context.Context, cluster string, obj runtime.Object, crvUpdated bool) error {
 	gvk := obj.GetObjectKind().GroupVersionKind()
 	if gvk.Kind == "" {
 		return fmt.Errorf("%s: kind is required", gvk)
@@ -95,7 +103,7 @@ func (s *ResourceStorage) Create(ctx context.Context, cluster string, obj runtim
 	return InterpretResourceDBError(cluster, metaobj.GetName(), result.Error)
 }
 
-func (s *ResourceStorage) Update(ctx context.Context, cluster string, obj runtime.Object) error {
+func (s *ResourceStorage) Update(ctx context.Context, cluster string, obj runtime.Object, crvUpdated bool) error {
 	metaobj, err := meta.Accessor(obj)
 	if err != nil {
 		return err
@@ -113,12 +121,25 @@ func (s *ResourceStorage) Update(ctx context.Context, cluster string, obj runtim
 
 	// The uid may not be the same for resources with the same namespace/name
 	// in the same cluster at different times.
-	updatedResource := map[string]interface{}{
-		"owner_uid":        ownerUID,
-		"uid":              metaobj.GetUID(),
-		"resource_version": metaobj.GetResourceVersion(),
-		"object":           buffer.Bytes(),
+	var updatedResource map[string]interface{}
+	if crvUpdated {
+		updatedResource = map[string]interface{}{
+			"owner_uid":        ownerUID,
+			"uid":              metaobj.GetUID(),
+			"resource_version": metaobj.GetResourceVersion(),
+			"object":           buffer.Bytes(),
+			"published":        false,
+			"deleted":          false,
+		}
+	} else {
+		updatedResource = map[string]interface{}{
+			"owner_uid":        ownerUID,
+			"uid":              metaobj.GetUID(),
+			"resource_version": metaobj.GetResourceVersion(),
+			"object":           buffer.Bytes(),
+		}
 	}
+
 	if deletedAt := metaobj.GetDeletionTimestamp(); deletedAt != nil {
 		updatedResource["deleted_at"] = sql.NullTime{Time: deletedAt.Time, Valid: true}
 	}
@@ -145,16 +166,44 @@ func (s *ResourceStorage) deleteObject(cluster, namespace, name string) *gorm.DB
 	}).Delete(&Resource{})
 }
 
-func (s *ResourceStorage) Delete(ctx context.Context, cluster string, obj runtime.Object) error {
+func (s *ResourceStorage) Delete(ctx context.Context, cluster string, obj runtime.Object, crvUpdated bool) error {
 	metaobj, err := meta.Accessor(obj)
 	if err != nil {
 		return err
 	}
 
-	if result := s.deleteObject(cluster, metaobj.GetNamespace(), metaobj.GetName()); result.Error != nil {
-		return InterpretResourceDBError(cluster, metaobj.GetName(), result.Error)
+	// The uid may not be the same for resources with the same namespace/name
+	// in the same cluster at different times.
+	var updatedResource map[string]interface{}
+	if crvUpdated {
+		updatedResource = map[string]interface{}{
+			"resource_version": metaobj.GetResourceVersion(),
+			//"cluster_resource_version": crvBytes,
+			"deleted":   true,
+			"published": false,
+		}
+		if deletedAt := metaobj.GetDeletionTimestamp(); deletedAt != nil {
+			updatedResource["deleted_at"] = sql.NullTime{Time: deletedAt.Time, Valid: true}
+		}
+	} else {
+		updatedResource = map[string]interface{}{
+			"deleted": true,
+		}
 	}
-	return nil
+
+	condition := map[string]interface{}{
+		"cluster":   cluster,
+		"namespace": metaobj.GetNamespace(),
+		"group":     s.storageGroupResource.Group,
+		"version":   s.storageVersion.Version,
+		"resource":  s.storageGroupResource.Resource,
+	}
+	if metaobj.GetName() != "" {
+		condition["name"] = metaobj.GetName()
+	}
+
+	result := s.db.WithContext(ctx).Model(&Resource{}).Where(condition).Updates(updatedResource)
+	return InterpretResourceDBError(cluster, metaobj.GetName(), result.Error)
 }
 
 func (s *ResourceStorage) genGetObjectQuery(ctx context.Context, cluster, namespace, name string) *gorm.DB {
@@ -182,6 +231,35 @@ func (s *ResourceStorage) Get(ctx context.Context, cluster, namespace, name stri
 		return fmt.Errorf("Failed to decode resource, into is %T", into)
 	}
 	return nil
+}
+
+func (s *ResourceStorage) GetObj(ctx context.Context, cluster, namespace, name string) (runtime.Object, error) {
+	var resource Resource
+	condition := map[string]interface{}{
+		"namespace": namespace,
+		"name":      name,
+		"cluster":   cluster,
+		"group":     s.storageGroupResource.Group,
+		"version":   s.storageVersion.Version,
+		"resource":  s.storageGroupResource.Resource,
+	}
+
+	result := s.db.WithContext(ctx).Model(&Resource{}).
+		Select("cluster_resource_version, object").Where(condition).First(&resource)
+	if result.Error != nil {
+		return nil, InterpretResourceDBError(cluster, namespace+"/"+name, result.Error)
+	}
+
+	into := s.newFunc()
+	obj, _, err := s.codec.Decode(resource.Object, nil, into)
+	if err != nil {
+		return nil, err
+	}
+	if obj != into {
+		return nil, fmt.Errorf("Failed to decode resource, into is %T", into)
+	}
+
+	return obj, nil
 }
 
 func (s *ResourceStorage) genListObjectsQuery(ctx context.Context, opts *internal.ListOptions) (int64, *int64, *gorm.DB, ObjectList, error) {
@@ -345,6 +423,20 @@ func (s *ResourceStorage) Watch(ctx context.Context, newfunc func() runtime.Obje
 	return watcher, nil
 }
 
+func (s *ResourceStorage) ProcessEvent(ctx context.Context, eventType watch.EventType, obj runtime.Object, cluster string) error {
+	newObj := obj.DeepCopyObject()
+	event := watch.Event{
+		Object: newObj,
+		Type:   eventType,
+	}
+	s.eventChan <- &watchcomponents.EventWithCluster{
+		Cluster: cluster,
+		Event:   &event,
+	}
+
+	return nil
+}
+
 func (s *ResourceStorage) fetchInitEvents(ctx context.Context, rv string, newfunc func() runtime.Object, opts *internal.ListOptions) ([]*watch.Event, error) {
 	if rv == "" {
 		objects, err := s.genListQuery(ctx, newfunc, opts)
@@ -388,6 +480,45 @@ func (s *ResourceStorage) GetMaxCrv(ctx context.Context) (string, error) {
 		maxCrv = utils.ParseInt642Str(metadata.ClusterResourceVersion)
 	}
 	return maxCrv, nil
+}
+
+// PublishEvent update column `ClusterResourceVersion` and `published` when event send to messagequeue middleware success.
+func (s *ResourceStorage) PublishEvent(ctx context.Context, wc *watchcomponents.EventWithCluster) {
+	metaObj, err := meta.Accessor(wc.Event.Object)
+	if err != nil {
+		return
+	}
+
+	crv, err := utils.ParseStr2Int64(metaObj.GetResourceVersion())
+	if err != nil {
+		klog.Errorf("Crv failed to convert int64, name: %s, namespace: %s, cluster: %s, err: %v",
+			metaObj.GetName(), metaObj.GetNamespace(), wc.Cluster, err)
+	}
+	// The uid may not be the same for resources with the same namespace/name
+	// in the same cluster at different times.
+	updatedResource := map[string]interface{}{
+		"ClusterResourceVersion": crv,
+		"published":              true,
+	}
+
+	condition := map[string]interface{}{
+		"group":     s.storageGroupResource.Group,
+		"version":   s.storageVersion.Version,
+		"resource":  s.storageGroupResource.Resource,
+		"cluster":   wc.Cluster,
+		"namespace": metaObj.GetNamespace(),
+		"name":      metaObj.GetName(),
+	}
+
+	s.db.WithContext(ctx).Model(&Resource{}).Where(condition).Updates(updatedResource)
+}
+
+func (s *ResourceStorage) GenCrv2Event(event *watch.Event) {
+	accessor := meta.NewAccessor()
+	err := accessor.SetResourceVersion(event.Object, utils.ParseInt642Str(time.Now().UnixMicro()))
+	if err != nil {
+		klog.Errorf("set resourceVersion failed: %v, may be it's a clear event", err)
+	}
 }
 
 func applyListOptionsToResourceQuery(db *gorm.DB, query *gorm.DB, opts *internal.ListOptions) (int64, *int64, *gorm.DB, error) {
