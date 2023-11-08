@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	watchcomponents "github.com/clusterpedia-io/clusterpedia/pkg/watcher/components"
 	"reflect"
 	"sync"
 
@@ -19,6 +18,7 @@ import (
 	"github.com/clusterpedia-io/clusterpedia/pkg/storage"
 	cache "github.com/clusterpedia-io/clusterpedia/pkg/storage/memorystorage/watchcache"
 	utilwatch "github.com/clusterpedia-io/clusterpedia/pkg/utils/watch"
+	watchcomponents "github.com/clusterpedia-io/clusterpedia/pkg/watcher/components"
 )
 
 var (

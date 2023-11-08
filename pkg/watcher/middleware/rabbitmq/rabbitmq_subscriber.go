@@ -12,9 +12,9 @@ import (
 )
 
 type RabbitmqSubscriber struct {
-	connNums        int                 // 设置的tcp连接池数 TODO zh
-	mqUrl           string              // rabbitmq连接地址
-	connectionsPool []*RabbitConnection // tcp连接池
+	connNums        int
+	mqUrl           string
+	connectionsPool []*RabbitConnection
 	consumerList    map[schema.GroupVersionResource]*RabbitClient
 	stopCh          <-chan struct{}
 	rw              sync.Mutex

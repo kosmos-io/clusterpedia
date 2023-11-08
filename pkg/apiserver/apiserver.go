@@ -3,8 +3,6 @@ package apiserver
 import (
 	"context"
 	"fmt"
-	watchcomponents "github.com/clusterpedia-io/clusterpedia/pkg/watcher/components"
-	"github.com/clusterpedia-io/clusterpedia/pkg/watcher/middleware"
 	"net/http"
 
 	metainternal "k8s.io/apimachinery/pkg/apis/meta/internalversion"
@@ -29,6 +27,8 @@ import (
 	"github.com/clusterpedia-io/clusterpedia/pkg/kubeapiserver"
 	"github.com/clusterpedia-io/clusterpedia/pkg/storage"
 	"github.com/clusterpedia-io/clusterpedia/pkg/utils/filters"
+	watchcomponents "github.com/clusterpedia-io/clusterpedia/pkg/watcher/components"
+	"github.com/clusterpedia-io/clusterpedia/pkg/watcher/middleware"
 )
 
 var (

@@ -5,7 +5,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"k8s.io/klog/v2"
 	"reflect"
 	"strconv"
 	"sync"
@@ -21,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
 	genericstorage "k8s.io/apiserver/pkg/storage"
+	"k8s.io/klog/v2"
 
 	internal "github.com/clusterpedia-io/api/clusterpedia"
 	"github.com/clusterpedia-io/clusterpedia/pkg/storage"
@@ -637,8 +637,7 @@ func getObjectListAndMaxCrv(objList []Object, onlyMetada bool) ([]Object, []stri
 				if resource.Deleted {
 					continue
 				}
-				var bytes Bytes
-				bytes = []byte(resource.Object)
+				var bytes Bytes = []byte(resource.Object)
 				crvs = append(crvs, utils.ParseInt642Str(resource.ClusterResourceVersion))
 				objListNeed = append(objListNeed, bytes)
 			} else {

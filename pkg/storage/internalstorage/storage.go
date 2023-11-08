@@ -3,19 +3,18 @@ package internalstorage
 import (
 	"context"
 	"fmt"
-	"github.com/clusterpedia-io/clusterpedia/pkg/synchromanager/clustersynchro/informer"
 	"sync"
-
-	"github.com/clusterpedia-io/clusterpedia/pkg/watcher/middleware"
-	"k8s.io/apimachinery/pkg/watch"
 
 	"gorm.io/gorm"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/watch"
 
 	internal "github.com/clusterpedia-io/api/clusterpedia"
 	"github.com/clusterpedia-io/clusterpedia/pkg/storage"
+	"github.com/clusterpedia-io/clusterpedia/pkg/synchromanager/clustersynchro/informer"
 	"github.com/clusterpedia-io/clusterpedia/pkg/utils"
 	watchcomponents "github.com/clusterpedia-io/clusterpedia/pkg/watcher/components"
+	"github.com/clusterpedia-io/clusterpedia/pkg/watcher/middleware"
 )
 
 var mutex sync.Mutex

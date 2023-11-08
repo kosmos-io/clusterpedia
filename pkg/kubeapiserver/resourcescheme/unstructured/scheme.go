@@ -99,8 +99,7 @@ func (s *Scheme) ConvertToVersion(in runtime.Object, target runtime.GroupVersion
 
 func (s *Scheme) UnsafeConvertToVersion(in runtime.Object, target runtime.GroupVersioner) (runtime.Object, error) {
 	// todo 先写死 参考k8s 将WatchEvent 传入到scheme里
-	var fromGVK schema.GroupVersionKind
-	fromGVK = in.GetObjectKind().GroupVersionKind()
+	fromGVK := in.GetObjectKind().GroupVersionKind()
 
 	toGVK, ok := target.KindForGroupVersionKinds([]schema.GroupVersionKind{fromGVK})
 	if !ok {

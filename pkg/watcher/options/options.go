@@ -10,12 +10,12 @@ type MiddlerwareOptions struct {
 	Name                        string
 	ServerIp                    string
 	ServerPort                  int
-	ConnectUser                 string // rabbitmq连接用户名
-	ConnectPassword             string // rabbitmq连接密码
-	MaxConnections              int    // rabbitmq tcp长连接数量（默认3）
-	Suffix                      string // rabbitmq url 后缀（如果有的话配上）
-	ExpiresPerSend              int    // 单次发送超时时间（秒，默认3）
-	QueueExpires                int64  // 当Queue(队列)在指定的时间未被访问，则队列将被自动删除。
+	ConnectUser                 string // rabbitmq user
+	ConnectPassword             string // rabbitmq pwd
+	MaxConnections              int    // rabbitmq tcp connects（default 3）
+	Suffix                      string // rabbitmq url suffix（if have）
+	ExpiresPerSend              int
+	QueueExpires                int64 // queue will be deleted autl if no consumer binds it in expire time
 	BindingControllerConfigPath string
 	CacheSize                   int
 }

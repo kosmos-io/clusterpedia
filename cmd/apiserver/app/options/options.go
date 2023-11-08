@@ -2,7 +2,6 @@ package options
 
 import (
 	"fmt"
-	"github.com/clusterpedia-io/clusterpedia/pkg/watcher"
 	"net"
 	"net/http"
 	"strings"
@@ -25,6 +24,7 @@ import (
 	generatedopenapi "github.com/clusterpedia-io/clusterpedia/pkg/generated/openapi"
 	"github.com/clusterpedia-io/clusterpedia/pkg/storage"
 	storageoptions "github.com/clusterpedia-io/clusterpedia/pkg/storage/options"
+	"github.com/clusterpedia-io/clusterpedia/pkg/watcher"
 	watchcomponents "github.com/clusterpedia-io/clusterpedia/pkg/watcher/components"
 	watchoptions "github.com/clusterpedia-io/clusterpedia/pkg/watcher/options"
 )

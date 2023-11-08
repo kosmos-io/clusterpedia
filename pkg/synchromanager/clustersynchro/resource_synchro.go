@@ -3,7 +3,6 @@ package clustersynchro
 import (
 	"context"
 	"errors"
-	"k8s.io/apimachinery/pkg/watch"
 	"sync"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/apimachinery/pkg/watch"
 	genericstorage "k8s.io/apiserver/pkg/storage"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"

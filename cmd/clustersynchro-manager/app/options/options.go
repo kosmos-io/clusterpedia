@@ -2,8 +2,6 @@ package options
 
 import (
 	"fmt"
-	"github.com/clusterpedia-io/clusterpedia/pkg/watcher"
-	watchoptions "github.com/clusterpedia-io/clusterpedia/pkg/watcher/options"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -28,6 +26,8 @@ import (
 	"github.com/clusterpedia-io/clusterpedia/pkg/metrics"
 	"github.com/clusterpedia-io/clusterpedia/pkg/storage"
 	storageoptions "github.com/clusterpedia-io/clusterpedia/pkg/storage/options"
+	"github.com/clusterpedia-io/clusterpedia/pkg/watcher"
+	watchoptions "github.com/clusterpedia-io/clusterpedia/pkg/watcher/options"
 )
 
 const (
