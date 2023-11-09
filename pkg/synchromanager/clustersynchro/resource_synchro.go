@@ -352,22 +352,6 @@ func (synchro *ResourceSynchro) handleResourceEvent(event *queue.Event) {
 	if !ok {
 		if _, ok = event.Object.(cache.DeletedFinalStateUnknown); !ok {
 			return
-		} else {
-			dfs := event.Object.(cache.DeletedFinalStateUnknown)
-			var se informer.StorageElement
-			if se, ok = dfs.Obj.(informer.StorageElement); !ok {
-				return
-			}
-			var err error
-			obj, err = synchro.storage.GetObj(synchro.ctx, synchro.cluster, se.Namespace, se.Name)
-			if err != nil {
-				return
-			}
-			metaObj, err := meta.Accessor(obj)
-			if err == nil {
-				klog.Warning("DeletedFinalStateUnknown, name: ", metaObj.GetName(), ", time: ", metaObj.GetDeletionTimestamp(),
-					", kind: ", obj.GetObjectKind().GroupVersionKind().Kind, ", cluster: ", synchro.cluster)
-			}
 		}
 	}
 	key, _ := cache.MetaNamespaceKeyFunc(obj)

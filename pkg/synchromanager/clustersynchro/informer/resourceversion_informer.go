@@ -79,7 +79,7 @@ func (informer *resourceVersionInformer) HandleDeltas(deltas cache.Deltas, isInI
 				}
 
 				informer.handler.OnAdd(d.Object, isInInitialList)
-				continue
+				break
 			}
 
 			if d.Type == cache.Replaced {
@@ -87,7 +87,7 @@ func (informer *resourceVersionInformer) HandleDeltas(deltas cache.Deltas, isInI
 					if v == 0 {
 						informer.handler.OnSync(d.Object)
 					}
-					continue
+					break
 				}
 			}
 
