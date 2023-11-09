@@ -46,9 +46,11 @@ type RESTManager struct {
 	restResourceInfos atomic.Value // map[schema.GroupVersionResource]RESTResourceInfo
 
 	requestVerbs metav1.Verbs
+
+	initCache bool
 }
 
-func NewRESTManager(serializer runtime.NegotiatedSerializer, storageMediaType string, storageFactory storage.StorageFactory, initialAPIGroupResources []*restmapper.APIGroupResources) *RESTManager {
+func NewRESTManager(serializer runtime.NegotiatedSerializer, storageMediaType string, storageFactory storage.StorageFactory, initialAPIGroupResources []*restmapper.APIGroupResources, initCache bool) *RESTManager {
 	requestVerbs := storageFactory.GetSupportedRequestVerbs()
 
 	apiresources := make(map[schema.GroupResource]metav1.APIResource)
@@ -89,6 +91,7 @@ func NewRESTManager(serializer runtime.NegotiatedSerializer, storageMediaType st
 		resourcetSorageConfig:      storageconfig.NewStorageConfigFactory(),
 		equivalentResourceRegistry: runtime.NewEquivalentResourceRegistry(),
 		requestVerbs:               requestVerbs,
+		initCache:                  initCache,
 	}
 
 	manager.resources.Store(apiresources)
@@ -269,12 +272,12 @@ func (m *RESTManager) addRESTResourceInfosLocked(addedInfos map[schema.GroupVers
 }
 
 func (m *RESTManager) genLegacyResourceRESTStorage(gvr schema.GroupVersionResource, kind string, namespaced bool) (*resourcerest.RESTStorage, error) {
-	storageConfig, err := m.resourcetSorageConfig.NewLegacyResourceConfig(gvr.GroupResource(), namespaced)
+	storageConfig, err := m.resourcetSorageConfig.NewLegacyResourceConfig(gvr.GroupResource(), namespaced, kind)
 	if err != nil {
 		return nil, err
 	}
 
-	resourceStorage, err := m.storageFactory.NewResourceStorage(storageConfig)
+	resourceStorage, err := m.storageFactory.NewResourceStorage(storageConfig, m.initCache)
 	if err != nil {
 		return nil, err
 	}
@@ -296,12 +299,12 @@ func (m *RESTManager) genLegacyResourceRESTStorage(gvr schema.GroupVersionResour
 }
 
 func (m *RESTManager) genUnstructuredRESTStorage(gvr schema.GroupVersionResource, kind string, namespaced bool) (*resourcerest.RESTStorage, error) {
-	storageConfig, err := m.resourcetSorageConfig.NewUnstructuredConfig(gvr, namespaced)
+	storageConfig, err := m.resourcetSorageConfig.NewUnstructuredConfig(gvr, namespaced, kind)
 	if err != nil {
 		return nil, err
 	}
 
-	resourceStorage, err := m.storageFactory.NewResourceStorage(storageConfig)
+	resourceStorage, err := m.storageFactory.NewResourceStorage(storageConfig, m.initCache)
 	if err != nil {
 		return nil, err
 	}
